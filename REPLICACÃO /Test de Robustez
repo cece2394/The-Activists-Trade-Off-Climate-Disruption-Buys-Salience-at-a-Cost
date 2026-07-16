@@ -1,0 +1,297 @@
+##### Replication Data for "The Activist’s Trade-Off: Climate Disruption Buys Salience at a Cost" 
+##### Authors: Clara Vandeweerdt
+
+### FINAL ASSIGMENT
+### Universidade Federal do ABC - UFABC
+### Public Policy Program
+### Prof. Dr. Ricardo Ceneviva
+### Students: Celia Cervera, Larissa Vila Nova, Ayelen Agundez
+
+############################################################################################################################
+
+#### Esse script foca exclusivamente no Estudo 2 (Reuno Unido), 
+## Em continuidade, vamos fazer um teste de robustez: O teste de exclusão de desatentos
+
+# Explicando o conceito
+
+## Exclusão de Desatentos (Attention/Manipulation Check)
+### A Ideia: A autora calculou o tempo médio de leitura (Treated_timer) e se os respondentes acertaram sobre qual 
+### grupo fez o protesto (Manipulation_correct), mas ela não excluiu da regressão principal quem leu rápido demais ou 
+### quem errou a pergunta.
+
+## O Teste: Rodar os modelos principais novamente, mas restringindo a amostra. Primeiro, excluindo os chamados 
+### "speeders" (por exemplo, quem ficou menos de 10 segundos na página da notícia). 
+### Segundo, excluindo quem reprovou na manipulation check.
+
+
+# Primeira fase carregar os pacotes essenciais para a manipulação dos dados
+
+library(ggplot2)
+library(marginaleffects)
+library(stargazer)
+
+d <- read.csv("disruption_data_clean2.csv")
+
+#n and retention rate
+sum(!is.na(d$Treated))/nrow(d)
+table(d$Treated) #per condition
+
+#leave out wave 2 dropouts
+d <- d[!is.na(d$Treated),]
+
+# Carrega os pacotes e a base de dados do Estudo 2. Calcula a proporção de participantes que retornaram 
+# para a segunda onda (taxa de retenção) e remove os que abandonaram o estudo.
+
+# Conexão com o artigo: O Estudo 2 utilizou um painel de duas ondas recrutado via Prolific no Reino Unido. 
+# A taxa de retenção calculada neste bloco corresponde aos 94% reportados no Apêndice C para a amostra do Reino Unido.
+
+# Estatísticas Descritivas 
+
+#descriptives
+round(prop.table(table(d$Party)), 2) #pct. from each party
+prop.table(table(d$Ideology3)) #pct. from each Ideology wing
+prop.table(table(d$Next_elect_wing)) #pct. from each party wing
+prop.table(table(d$SalienceClim_any))
+
+
+# O que significa 
+
+#O que faz: Calcula proporções para verificar a distribuição dos participantes por partido político, 
+# bloco ideológico (esquerda, centro, direita) e a taxa basal de saliência climática.
+
+# Estes dados embasam as tabelas de representatividade do Apêndice C e I. Por exemplo, o cálculo de saliência prévia 
+#(SalienceClim_any) mostra que 18% da amostra do Reino Unido já mencionava o clima como um dos três principais problemas, 
+# valor que a autora compara com pesquisas nacionais do YouGov.
+
+
+# Normalização das variáveis de resultado (Outcomes)
+
+#main outcomes
+outcome_cols <- c("SalienceClim_any", "Nonewoil","Govt","Concern","Behavior")
+outcome_names <- c("Salience", "Oil opposition", "Govt. dissatisf.", "Concern", "Behavior intent")
+
+# Este passo é idêntico ao do Estudo 1 e é essencial para garantir a comparabilidade visual e
+# estatística entre os diferentes desfechos na Figure 1.
+
+#normalize differences by width of scale (e.g. divide by 4 for 1-5 scale)
+#this is equivalent to rescaling original variables to 0-1
+for(outcome in outcome_cols[-1]){
+  scalemax <- max(d[outcome], na.rm=T)
+  d[paste0(outcome,"_diff_norm")]  <- d[paste0(outcome,"_diff")]/(scalemax-1)
+}
+
+#salience does not need rescaling; already 0-1
+
+d["SalienceClim_any_diff_norm"] <- d["SalienceClim_any_diff"]
+
+
+##main effect of treatment on first differences
+
+# Regressões Principais (Teste de Hipóteses)
+
+#main: salience, highway support, satisfaction with govt, concern, behavior
+
+summary(lm(SalienceClim_any_diff ~ Treated, data=d))
+summary(lm(Nonewoil_diff ~ Treated, data=d))
+summary(lm(Govt_diff ~ Treated, data=d))
+summary(lm(Concern_diff ~ Treated, data=d))
+summary(lm(Behavior_diff ~ Treated, data=d))
+
+
+# O que Significa 
+
+# Executa os modelos lineares (lm) para testar o efeito do tratamento nas diferenças das atitudes entre as ondas 2 e 1.
+# Diferente do Estudo 1, aqui não há o uso de pesos amostrais (svyglm).
+
+
+# Estes modelos testam as Hipóteses H1 a H5 pré-registradas para o Estudo 2 (Apêndice página 06). A ausência de pesos amostrais reflete a
+# nota metodológica da autora de que os pesos populacionais não estavam disponíveis para a amostra da plataforma 
+# Prolific no Reino Unido. Os resultados geram as estimativas reportadas no texto: um aumento de 10 pontos percentuais 
+# na saliência e uma diminuição na oposição a novos poços de petróleo.
+
+# Tamanhos de Efeito e Políticas Secundárias
+
+#significant effects in SDs
+fit_salience <- lm(SalienceClim_any_diff ~ Treated, data=d)
+fit_salience$coefficients["Treated"] / sd(d$SalienceClim_any, na.rm=T) #effect in SDs
+fit_nonewoil <- lm(Nonewoil_diff ~ Treated, data=d)
+fit_nonewoil$coefficients["Treated"] / sd(d$Nonewoil, na.rm=T) #effect in SDs
+
+#secondary: other policies, fossil investments
+summary(lm(Policy_diff ~ Treated, data=d))
+summary(lm(Fossilinv_diff ~ Treated, data=d))
+
+
+# Calcula o coeficiente d de Cohen (tamanho do efeito em desvios padrão) para os resultados significativos e 
+# testa o impacto do tratamento em políticas secundárias não diretamente ligadas ao foco do protesto.
+
+# Os tamanhos de efeito em desvios padrão ($d=0.26$ para saliência e $d=-0.10$ para petróleo) são citados diretamente
+# na seção "Results". O teste secundário (Fossilinv_diff) prova que não houve um efeito de "backlash" significativo 
+# sobre o apoio a regulamentações de investimentos fósseis, isolando o impacto negativo apenas à mensagem exata do 
+# grupo ativista.
+
+
+
+##main effect graph
+
+#effect sizes (0-1) and CIs
+est_CI <- as.data.frame(t(sapply(outcome_cols, function(outcome) {
+  formula <- as.formula(paste0(outcome, "_diff_norm ~ Treated"))
+  fit <- lm(formula, data=d)
+  c(fit$coefficients["Treated"], confint(fit)["Treated",])
+})))
+
+#clean
+colnames(est_CI) <- c("est", "CI_lo", "CI_hi")
+est_CI$outcome <- outcome_names
+est_CI$outcome <- factor(est_CI$outcome, levels=outcome_names)
+est_CI$study <- "Study 2, UK"
+
+#export
+write.csv(est_CI, "main_estimates_CIs2.csv", row.names=F)
+
+#Arquivo CSV exportado
+
+# Polarização e Efeitos Heterogêneos (Gráfico de Ideologia)
+
+##polarization and heterogeneous effects
+
+#set left as baseline category
+d$Ideology3 <- factor(d$Ideology3, levels=c("left", "center", "right"))
+
+#by pol. orientation: conditional effect estimates and CIs for figure
+cond_est_CI <- lapply(outcome_cols, function(outcome){
+  
+  #fit interactive model (with normalized outcome)
+  formula <- as.formula(paste0(outcome, "_diff_norm ~ Treated*Ideology3"))
+  fit <- lm(formula, data=d)
+  print(outcome)
+  print(summary(fit))
+  
+  #get marginal effect of Treated for different values of the moderator
+  CATEs <- slopes(fit, newdata = datagrid(Treated = 0, Ideology3 = c("left", "center", "right")))
+  #note: only need one Treated value, as model is linear: other values would give same result
+  CATEs <- tail(CATEs, 3)[c("Ideology3","estimate","conf.low","conf.high")] 
+  CATEs
+  
+})
+cond_est_CI <- as.data.frame(do.call(rbind, cond_est_CI))
+colnames(cond_est_CI) <- c("Ideology", "est", "CI_lo", "CI_hi")
+cond_est_CI$outcome <- rep(outcome_names, each=3)
+cond_est_CI$outcome <- factor(cond_est_CI$outcome, levels=outcome_names)
+
+#figure
+pdf(paste0("figures/disruption_byideology2.pdf"), 11.5, 6)
+print(ggplot(cond_est_CI, aes(x=outcome, y=est, color=Ideology)) + 
+        geom_hline(yintercept=0, color="dark grey") +
+        geom_errorbar(aes(ymin=CI_lo, ymax=CI_hi), width=.1, position=position_dodge(.2)) +
+        geom_point(position=position_dodge(.2)) +
+        ylab(paste0("Effect of disruption treatment")) +
+        theme_bw() +
+        theme(axis.title.x=element_blank(),
+              axis.title.y=element_text(size=17),
+              axis.text=element_text(size=17),
+              legend.position="bottom",
+              legend.title=element_text(size=17),
+              legend.text=element_text(size=17)))
+dev.off()
+
+#see Appendix script for results summarized in-text
+
+# O que significa 
+
+# Cria modelos interativos (Treated*Ideology3) para verificar se o tratamento afetou grupos ideológicos
+# de forma diferente. Usa a função slopes() para extrair os Efeitos Médios Condicionais do Tratamento (CATEs) 
+# e gera um gráfico em PDF.
+
+# Este bloco inteiro responde à questão teórica: protestos disruptivos causam polarização? 
+# A autora não encontra efeitos de interação estatisticamente significativos entre o tratamento e a ideologia 
+# (esquerda, centro ou direita) no Estudo 2. O código do ggplot gera exatamente a Figure 2 do artigo.
+
+
+# Checagem de Manipulação
+
+##manipulation checks
+
+#time spent on article (treated only)
+tapply(d$Treated_timer, d$Treated, mean, ra.rm=T)
+t.test(Treated_timer ~ Manipulation_correct, d=d[d$Treated==1,]) #by correct answer
+
+#rate of correct answer by treatment
+tapply(d$Manipulation_correct, d$Treated, mean, ra.rm=T)
+tapply(d$Manipulation_correct | d$Manipulation_protest, d$Treated, mean, ra.rm=T)
+#also counting respondents giving a "protest" answer
+
+
+# O que significa
+# O que faz: Compara o tempo gasto na leitura do artigo e as taxas de acerto sobre qual grupo ativista organizou o protesto.
+
+# A autora reporta na seção "Manipulation Check" que os participantes do Estudo 2 gastaram em média 70 segundos 
+# lendo o artigo. Ela também reporta a taxa de acerto de 95% para os tratados contra 38% do grupo controle 
+# (o que sugere que parte da amostra já conhecia o evento real da mídia). O teste T valida que, no Estudo 2, 
+# não houve diferença estatisticamente significativa no tempo de leitura entre quem acertou e quem errou ($p=0.25$).
+
+##############################################################################
+
+# Teste de Robustez
+
+
+# Manter todo o grupo controle INTACTO + Manter apenas as pessoas do grupo tratado que acertaram a pergunta e
+# que passaram pelo menos 10 segundos na página.
+
+
+# 1. Carregar pacotes necessários 
+library(dplyr)
+library(stargazer)
+
+# Criar a base de dados "Robusta"
+
+# 2. Criar a base de dados limpa de "speeders" e desatentos
+# A regra ( | significa OU, & significa E ):
+# Fica quem é do controle (Treated == 0) OU
+# Fica quem é tratado (Treated == 1) E acertou a pergunta E leu por mais de 10 segundos
+d_robust <- d %>%
+  filter(Treated == 0 | (Treated == 1 & Manipulation_correct == 1 & Treated_timer >= 10))
+
+# 3. Ver quantos respondentes foram cortados da amostra
+cat("Tamanho da amostra original:", nrow(d), "\n")
+cat("Tamanho da amostra robusta:", nrow(d_robust), "\n")
+cat("Desatentos excluídos:", nrow(d) - nrow(d_robust), "\n")
+
+# Rodar os Modelos Originais vs. Modelos Robustos
+
+# 4. Rodar os modelos na base ORIGINAL (como a autora fez)
+fit_salience_orig <- lm(SalienceClim_any_diff ~ Treated, data = d)
+fit_oil_orig <- lm(Nonewoil_diff ~ Treated, data = d)
+
+# 5. Rodar os modelos na base ROBUSTA (nosso teste)
+fit_salience_rob <- lm(SalienceClim_any_diff ~ Treated, data = d_robust)
+fit_oil_rob <- lm(Nonewoil_diff ~ Treated, data = d_robust)
+
+# Visualizar a Comparação Lado a Lado
+
+# 6. Gerar a tabela comparativa no console do R
+stargazer(fit_salience_orig, fit_salience_rob, fit_oil_orig, fit_oil_rob,
+          type = "text", # Mostra direto no console do R
+          column.labels = c("Saliência (Orig)", "Saliência (Rob)", "Petróleo (Orig)", "Petróleo (Rob)"),
+          dep.var.labels.include = FALSE,
+          keep = c("Treated"), # Esconde a constante para focar no efeito do tratamento
+          keep.stat = c("n", "adj.rsq"), # Mostra apenas o tamanho da amostra e o R2
+          title = "Teste de Robustez: Exclusão de Speeders e Desatentos")
+
+
+Teste de Robustez: Exclusão de Speeders e Desatentos
+============================================================================
+                                   Dependent variable:                      
+             ---------------------------------------------------------------
+             Saliência (Orig) Saliência (Rob) Petróleo (Orig) Petróleo (Rob)
+                   (1)              (2)             (3)            (4)      
+----------------------------------------------------------------------------
+Treated          0.099***        0.094***        -0.138**        -0.130**   
+                 (0.030)          (0.030)         (0.057)        (0.058)    
+                                                                            
+----------------------------------------------------------------------------
+Observations       846              818             814            790      
+Adjusted R2       0.012            0.010           0.006          0.005     
+============================================================================
+Note:                                            *p<0.1; **p<0.05; ***p<0.01
