@@ -1,0 +1,527 @@
+##### Replication Data for "The Activist’s Trade-Off: Climate Disruption Buys Salience at a Cost" 
+##### Authors: Clara Vandeweerdt
+
+### FINAL ASSIGMENT
+### Universidade Federal do ABC - UFABC
+### Public Policy Program
+### Prof. Dr. Ricardo Ceneviva
+### Students: Celia Cervera, Larissa Vila Nova, Ayelen Agundez
+
+############################################################################################################################
+
+#### Esse quarto script foca no Estudo 2 do artigo e na preparação dos dados demográficos para o Apéndice.
+
+# Primeira fase carregar os pacotes.
+
+library(ggplot2)
+library(xtable)
+library(stargazer)
+library(stringr)
+library(BayesFactor)
+library(marginaleffects)
+
+# Importar os dados 
+d <- read.csv("disruption_data_clean2.csv")
+
+#leave out wave 2 dropouts
+d <- d[!is.na(d$Treated),]
+
+# Definição de Variáveis
+#main outcomes
+outcome_cols <- c("SalienceClim_any","Nonewoil","Govt","Concern","Behavior")
+outcome_cols_all <- c(outcome_cols, "Policy", "Fossilinv")
+outcome_names <- c("Salience", "Oil opposition", "Govt. dissatisf.", "Concern", "Behavior intent")
+outcome_names_all <- c(outcome_names, "(Climate policy)", "(Fossil regulat.)")
+outcome_shorts <- c("Salience", "Oil opp.", "Govt. dissat.", "Concern", "Behavior intent")
+
+# o Estudo 2 foca no Reino Unido e utiliza a plataforma Prolific para coleta de dados.
+# Apéndice C: Demografia e Representatividade:
+
+# O código começa adaptando as variáveis brutas do estudio para categorias comparáveis
+# com o censo do Reino Unido.
+
+#create binned age variable
+d$Age.binned <- cut(d$Age, 
+                    breaks = c(18, 24, 34, 44, 54, Inf), 
+                    labels = c("18-24", "25-34", "35-44", "45-54", "55+"),
+                    right = TRUE)
+
+#get proportions of each demographic group
+# O Estudo 2 introduz a variável Etnia Simplificada (Ethnicity.simplified),
+# algo que não era o foco no estudo 1
+
+dem_vars <- c("Sex", "Age.binned", "Ethnicity.simplified")
+props <- apply(d[dem_vars], 2, function(x) data.frame(prop.table(table(x))))
+props <- do.call(rbind, props)
+colnames(props) <- c("demographic", "prop_sample")
+
+#merge with population statistics
+population_props <- read.csv("population data/population_statistics_Prolific.csv")
+props <- cbind(props, population_props["Proportion"])
+
+# O script cruza esses dados com o arquivo population_statistics_Prolific.csv
+# (dados do censo de 2021/2022) para gerar a Tabela A5 do Apêndice.
+
+#convert to % and round
+props$prop_sample <- round(props$prop_sample*100, 1)
+props$Proportion <- round(props$Proportion*100, 1)
+
+#prepare table for Latex
+library(xtable)
+props_xt <- xtable(props, digits=1,
+                   caption="Percentages of sample in each demographic
+                   group, compared to UK population percentages for the study period
+                   (2021 and 2022 census data compiled by Prolific).", label="tab:demographics2")
+names(props_xt) <- c('Demographic','Sample %, unweighted','Population %')
+print(props_xt, file = "tables/demographics2.tex", include.rownames=F,
+      hline.after = c(-1, 0, 2, 7, 12))
+
+# A tabela é gerada 
+
+# 2 Representatividade Política 
+
+# Diferente da Dinamarca, o sistema do Reino Unido tem particularidades (como os partidos da
+# Irlanda do Norte) que o autor decide filtrar para manter a comparação com as pesquisas nacionais da Politico.
+
+#pct. de eleitores que pretendem votar em cada partido, excluindo os indecisos e
+#os eleitores dos partidos da Irlanda do Norte
+NI_parties <- c("Sinn FC)in", "Alliance Party of Northern Ireland")
+eligible <- d$Next_elect_wing != "other" & !(d$Party %in% NI_parties)
+party <- d$Party[eligible]
+props_party <- data.frame(prop.table(table(party)))
+
+#convert to % and round
+props_party$Freq <- round(props_party$Freq*100, 1)
+props_party <- rbind(props_party, data.frame(party=c("UK Independence Party", "Change UK"),
+                                             Freq=c(0, 0)))
+
+## Mescla com as intenções de voto reais do Reino Unido (Politico Poll of Polls)
+election_polls <- read.csv("population data/voting_intentions_Politico_UK.csv")
+
+props_party <- cbind(props_party, election_polls)[-3]
+### Ao executar cbind temos um error:
+### Error in data.frame(..., check.names = FALSE): argumentos implicam em número de linhas distintos: 12, 11
+### O data fram props_party tem 1 partido mais "Sinn Féin", que não existe em election_polls.
+
+props_party <- props_party[order(props_party$poll_proportion, decreasing=TRUE),]
+
+#prepare table for Latex
+props_xt <- xtable(props_party, digits=1,
+                   caption="Unweighted and weighted percentages of sample intending to vote for each
+                   party, compared to Politico Poll of Polls (Sinn Fein and APNI not included, as most
+                   UK opinion polls do not cover the 3\\% of voters who live in Northern Ireland).",
+                   label="tab:votingintention2")
+names(props_xt) <- c('Party','Sample %, unweighted', 'Politico %')
+print(props_xt, file = "tables/votingintention2.tex", include.rownames=F)
+
+# Não foi possível reproduzir a tabela A7 do Apendice.
+
+
+# A autora agrupa os partidos britânicos em blocos ideológicos para a análise de efeitos heterogêneos.
+
+#comparison of left/right/center %
+prop.table(table(d$Next_elect_wing[eligible]))
+library(dplyr)
+election_polls$Next_elect_wing <- recode(election_polls$party, `Labour Party` = "left", `Plaid Cymru` = "left",
+                                         `Green Party` = "left", `Workers Party of Britain` = "left", `Scottish National Party (SNP)` = "left",
+                                         `Social Democratic and Labour Party (SDLP)` = "left", `Liberal Democrats` = "center", 
+                                         `Conservative Party` = "right", `Reform UK` = "right", `UK Independence Party`="right",
+                                         `Change UK` = "right")
+prop.table(table(election_polls$Next_elect_wing))
+
+#pct. mentioning climate or environment in wave 1
+mean(d$SalienceClim_any)
+
+# Apendice F: histogramas dos resultados da onda 1
+
+#preparar dados detalhados (incluindo a orientação política, para quando fizermos a divisão por esse critério)
+d_outcomes <- d[c("hashID", outcome_cols_all, "Ideology3", "Next_elect_wing")]
+d_outcomes <- reshape(d_outcomes, idvar=c("hashID",  "Ideology3", "Next_elect_wing"),
+                      varying=list(2:8), times=outcome_names_all,
+                      v.names="response", timevar="outcome", direction="long")
+d_outcomes$outcome <- factor(d_outcomes$outcome, levels=outcome_names_all)
+d_outcomes$Next_elect_wing <- factor(str_to_title(d_outcomes$Next_elect_wing),
+                                     levels=c("Left","Center","Right"))
+
+#draw plot
+pdf(paste0("figures/descriptive_histograms2.pdf"), 5, 7.5)
+ggplot(d_outcomes, aes(response)) + 
+  geom_bar(fill="salmon") + 
+  facet_wrap(~outcome, scales="free", ncol=2) + 
+  scale_x_continuous(breaks=seq(0,7)) +
+  theme_bw() +
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())
+dev.off()
+
+# Comentarios: 
+# Estes histogramas permitem identificar se a amostra britânica já estava polarizada na Onda 1.
+# Os histogramas mostram se as respostas estão concentradas nos extremos (polarização) ou no meio.
+# Permite identificar visualmente se muitos respondentes já deram a nota máxima ou mínima 
+# antes do experimento começar, o que justifica a análise de "Ceiling Effects" que o autor faz mais 
+# adiante no script. Este é o ponto de partida do Estudio 2.
+
+
+# Apéndice G: tabelas descritivas: médias pré/pós e por condição
+# O objetivo aqui é calcular o efeito real do tratamento de mídia usando a lógica de Diferença-em-Diferenças (DiD).
+
+# A autora vai usar um loop para repetir o mesmo cálculo para todas as variáveis.
+diffs <- t(sapply(outcome_cols_all, function(outcome) {
+  
+  # eliminar desistências relacionadas a resultados específicos
+  d_complete <- d[ !is.na(d[outcome]) & !is.na(d[paste0(outcome,"_w2")]) ,]
+  
+  # calcular medías
+  w1_means <- tapply(d_complete[[outcome]], d_complete$Treated, mean, na.rm=T)
+  w2_means <- tapply(d_complete[[paste0(outcome,"_w2")]], d_complete$Treated, mean, na.rm=T)
+  
+  # calcular diferenças
+  control_diff <- w2_means[1] - w1_means[1]
+  treat_diff <- w2_means[2] - w1_means[2]
+  did <- treat_diff - control_diff
+  
+  round(c(w1_means[1], w2_means[1], control_diff,
+          w1_means[2], w2_means[2], treat_diff,
+          did), 3)
+  
+}))
+colnames(diffs) <- c("Control, pre","Control, post", "Control, diff.",
+                     "Treated, pre","Treated, post", "Treated, diff.",
+                     "Diff in diff")
+rownames(diffs) <- outcome_names_all
+
+#incluir os erros-padrão (SE) e os valores-p
+SE_pval <- as.data.frame(t(sapply(outcome_cols_all, function(outcome) {
+  formula <- as.formula(paste0(outcome, "_diff ~ Treated"))
+  fit <- lm(formula, data=d)
+  round(summary(fit)$coef["Treated",c(2,4)], 3)
+})))
+colnames(SE_pval) <- c("SE","p-val.")
+diffs <- cbind(diffs, SE_pval)
+
+# Comentarios:
+# A análise principal do Estudo 2 fundamenta-se na técnica de Diferença-em-Diferenças (DiD). 
+# Esta abordagem permite isolar o impacto causal do tratamento de mídia ao comparar a evolução das atitudes 
+# climáticas no grupo experimental em relação ao grupo de controle. Ao utilizar modelos de regressão linear
+# para extrair erros-padrão e p-valores, o estudo assegura que as mudanças observadas na saliência e na 
+# oposição às táticas de protesto no Reino Unido possuam rigor estatístico e validade interna.
+
+# Os resultados do Estudo 2 no Reino Unido corroboram e aprofundam os achados do Estudo 1.
+# Enquanto o ativismo disruptivo consegue elevar o clima na agenda pública (Saliência) de 019 a 0.40, ele gera
+# um custo político real ao alienar parte do público em relação às pautas específicas do movimento (Oposição ao Petróleo),
+# sem conseguir mover as atitudes subjacentes de preocupação ou intenção de comportamento.
+
+
+#Bayes factors
+Bayes <- sapply(outcome_cols_all, function(outcome) {
+  outcomediff <- paste0(outcome, "_diff")
+  formula <- as.formula(paste0(outcomediff, " ~ Treated"))
+  fit <- lmBF(formula, data=d[!is.na(d[outcomediff]),])
+  extractBF(fit)[1,1]
+})
+diffs$Bayes <- Bayes
+
+#n
+n <- sapply(outcome_cols_all, function(outcome) {
+  sum(!is.na(d[paste0(outcome, "_diff")]))
+})
+diffs$n <- n
+
+#write to Latex
+print(xtable(diffs, digits=c(0,2,2,2,2,2,2,2,2,3,2,0)), file="tables/conditional_means2.tex", include.colnames=F, only.contents = T,
+      hline.after = NULL)
+
+# Factor de Bayes é usado para medir quanta evidência os dados fornecem. Um valor alto indica forte evidência de que 
+# o tratamento realmente causou uma mudança; um valor próximo de 1 indica evidência inconclusiva.
+
+
+# Apendice I: tabelas de regressão para efeitos heterogêneos por intenção de voto e ideologia
+
+#definir a ordem dos níveis
+d$Next_elect_wing <- factor(d$Next_elect_wing, levels=c("left","center","other","right"))
+d$Ideology3 <- factor(d$Ideology3, levels=c("left","center","right"))
+
+#por orientação política (intenção de voto nas próximas eleições)
+fit_bypol_sal <- lm(SalienceClim_any_diff ~ Treated*Next_elect_wing, data=d)
+fit_bypol_oil <- lm(Nonewoil_diff ~ Treated*Next_elect_wing, data=d)
+fit_bypol_govt <- lm(Govt_diff ~ Treated*Next_elect_wing, data=d)
+fit_bypol_conc <- lm(Concern_diff ~ Treated*Next_elect_wing, data=d)
+fit_bypol_behav <- lm(Behavior_diff ~ Treated*Next_elect_wing, data=d)
+
+#para o texto principal, uma vez que a interação esquerda-direita é significativa para a insatisfação com o governo
+#obter o efeito marginal do grupo tratado para diferentes valores do moderador
+CATEs_govt <- slopes(fit_bypol_govt, newdata = datagrid(Treated = 0, Next_elect_wing = c("left", "right")))
+tail(CATEs_govt, 2)[c("Next_elect_wing","estimate","p.value","conf.low","conf.high")] 
+
+#stargazer tables for appendix
+stargazer(list(fit_bypol_sal, fit_bypol_oil, fit_bypol_govt, fit_bypol_conc, fit_bypol_behav),
+          covariate.labels=c("Treated", "Center", "Other", "Right", "Treated:Other", "Treated:Center", "Treated:Right"),
+          dep.var.labels=outcome_shorts, omit = c("Constant"), omit.stat=c("f","ser"), digits=2,
+          out="tables/disruption_bypolitics2.tex", label="tab:disruption_bypolitics2",
+          title="Models for Study 2 with interaction between disruption treatment
+          and voting intention: left (baseline category), center, undecided/other or right. Dependent variables
+          are first-differenced outcomes between wave 2 and wave 1 on their original scales.",
+          star.cutoffs=c(0.05,0.01,0.001))
+
+# A Tabela A13  não foi possível reproduzir. Há um erro.
+# Error in if (is.na(s)) { : the condition has length > 1
+
+#by ideology
+fit_byideo_sal <- lm(SalienceClim_any_diff ~ Treated*Ideology3, data=d)
+fit_byideo_oil <- lm(Nonewoil_diff ~ Treated*Ideology3, data=d)
+fit_byideo_govt <- lm(Govt_diff ~ Treated*Ideology3, data=d)
+fit_byideo_conc <- lm(Concern_diff ~ Treated*Ideology3, data=d)
+fit_byideo_behav <- lm(Behavior_diff ~ Treated*Ideology3, data=d)
+
+#para o texto principal, uma vez que alguns efeitos são significativos (apenas) para os eleitores de direita
+#obter o efeito marginal do grupo tratado para diferentes valores do moderador
+CATEs_sal <- slopes(fit_byideo_sal, newdata = datagrid(Treated = 0, Ideology3 = c("right")))
+tail(CATEs_sal, 1)[c("estimate","p.value","conf.low","conf.high")] 
+CATEs_oil <- slopes(fit_byideo_oil, newdata = datagrid(Treated = 0, Ideology3 = c("right")))
+tail(CATEs_oil, 1)[c("estimate","p.value","conf.low","conf.high")] 
+
+#Tabelas do Stargazer para o apêndice
+stargazer(list(fit_byideo_sal, fit_byideo_oil, fit_byideo_govt, fit_byideo_conc, fit_byideo_behav),
+          covariate.labels=c("Treated", "Center", "Right", "Treated:Center", "Treated:Right"),
+          dep.var.labels=outcome_shorts, omit = c("Constant"), omit.stat=c("f","ser"), digits=2,
+          out="tables/disruption_byideology2.tex", label="tab:disruption_byideology2",
+          title="Models for Study 2 with interaction between disruption treatment
+          and ideology: left (baseline category), center or right. Dependent variables
+          are first-differenced outcomes between wave 2 and wave 1 on their original scales.",
+          star.cutoffs=c(0.05,0.01,0.001))
+
+# A Tabela A14  não foi possível reproduzir. Há um erro.
+# Error in if (is.na(s)) { : the condition has length > 1
+
+
+# Apêndice I: gráfico dos efeitos heterogêneos por intenção de voto (a ideologia está incluída nas análises principais)
+
+#normalizar as diferenças pela amplitude da escala (por exemplo, dividir por 4 para uma escala de 1 a 5)
+#isso equivale a redimensionar as variáveis originais para o intervalo de 0 a 1
+for(outcome in outcome_cols[-1]){
+  scalemax <- max(d[outcome], na.rm=T)
+  d[paste0(outcome,"_diff_norm")]  <- d[paste0(outcome,"_diff")]/(scalemax-1)
+}
+
+#salience não precisa ser reescalado; já está no intervalo de 0 a 1
+d["SalienceClim_any_diff_norm"] <- d["SalienceClim_any_diff"]
+
+#estimativas de efeito condicional e ICs para a figura
+cond_est_CI <- lapply(outcome_cols, function(outcome){
+  
+  #ajustar modelo interativo (com resultado normalizado)
+  formula <- as.formula(paste0(outcome, "_diff_norm ~ Treated*Next_elect_wing"))
+  fit <- lm(formula, data=d)
+  #nota: você também pode simplesmente escrever lm(get(outcome) ~ ...)
+  
+  #Obter o efeito marginal de “Treated” para diferentes valores do moderador
+  CATEs <- slopes(fit, newdata = datagrid(Treated = 0, Next_elect_wing = c("left", "center", "other", "right")))
+  #nota: basta um único valor tratado, pois o modelo é linear: outros valores dariam o mesmo resultado
+  CATEs <- tail(CATEs, 4)[c("Next_elect_wing","estimate","conf.low","conf.high")] 
+  CATEs
+  
+})
+cond_est_CI <- as.data.frame(do.call(rbind, cond_est_CI))
+colnames(cond_est_CI) <- c("Orientation", "est", "CI_lo", "CI_hi")
+cond_est_CI$outcome <- rep(outcome_names, each=4)
+cond_est_CI$outcome <- factor(cond_est_CI$outcome, levels=outcome_names)
+
+#obter cores: padrão a partir de uma paleta de três cores mais amarelo
+library(scales)
+show_col(hue_pal()(3))
+
+#figure
+pdf(paste0("figures/disruption_bypolitics2.pdf"), 11.5, 6)
+print(ggplot(cond_est_CI, aes(x=outcome, y=est, color=Orientation)) + 
+        geom_hline(yintercept=0, color="dark grey") +
+        geom_errorbar(aes(ymin=CI_lo, ymax=CI_hi), width=.1, position=position_dodge(.2)) +
+        geom_point(position=position_dodge(.2)) +
+        ylab(paste0("Effect of disruption treatment")) +
+        theme_bw() +
+        theme(axis.title.x=element_blank(),
+              axis.title.y=element_text(size=17),
+              axis.text=element_text(size=17),
+              legend.position="bottom",
+              legend.title=element_text(size=17),
+              legend.text=element_text(size=17)) +
+        labs(color="Voting intention") + 
+        scale_color_discrete(labels=c("left", "center", "other", "right")) +
+        scale_color_manual(values=c("#f8766d", "#CBA804", "#00ba38", "#619cff")))
+dev.off()
+
+# No gráfico se  visualiza como o tratamento de mídia afeta cada grupo político de forma diferente, 
+# permitindo-nos comparar através da normalização.
+
+##Apêndice I: Análise dos efeitos de teto
+
+# Verifica quem já está no nível 7 (máximo) de preocupação na esquerda
+mean(d$Concern[d$Next_elect_wing=="left"] == 7, na.rm=T) #on both items
+mean(d$Concern[d$Next_elect_wing=="left"] >= 6.5, na.rm=T) #on at least one item
+
+#pct. top responses on concern among left wing
+mean(d$Nonewoil[d$Next_elect_wing=="left"] == 5, na.rm=T)
+
+# No Reino Unido, eleitores do Labour ou Green Party costumam ter níveis de preocupação altíssimos. 
+# Se 40-50% já deram a nota máxima na Onda 1, o experimento nunca conseguirá mostrar um "aumento" 
+# nesse grupo (pois não há nota 8).
+
+# verifica o oposto para os conservadores:
+# pct. bottom responses on behavior among right wing
+mean(d$Behavior[d$Next_elect_wing=="right"] == 1, na.rm=T) #on both items
+
+#interactions by voting intention, leaving out respondents with top answer in Wave 1
+ints_pol <- lapply(outcome_cols, function(outcome){
+  formula <- as.formula(paste0(outcome, "_diff ~ Treated*Next_elect_wing"))
+  notmax <- ( d[outcome] != max(d[outcome], na.rm=T) )
+  fit <- lm(formula, data=d[notmax,])
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+ints_pol <- do.call(rbind, ints_pol)
+rownames(ints_pol) <- outcome_names
+print(xtable(ints_pol, digits=c(0,2,2,3,0),
+             caption="Interaction coefficients on each outcome measure, between the media treatment and left-
+                      wing (baseline category) versus right-wing voting intention (Study 2),
+                      leaving out respondents that gave the top answer(s) on that outcome variable in Wave 1.",
+             label="tab:disruption_noceiling_pol"),
+      file="tables/disruption_noceiling_pol2.tex", caption.placement = "top")
+
+#interactions by ideology, leaving out respondents with top answer in Wave 1
+ints_ideo <- lapply(outcome_cols, function(outcome){
+  formula <- as.formula(paste0(outcome, "_diff ~ Treated*Ideology3"))
+  notmax <- ( d[outcome] != max(d[outcome], na.rm=T) )
+  fit <- lm(formula, data=d[notmax,])
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+ints_ideo <- do.call(rbind, ints_ideo)
+rownames(ints_ideo) <- outcome_names
+print(xtable(ints_ideo, digits=c(0,2,2,3,0),
+             caption="Interaction coefficients on each outcome measure, between the media treatment and left-
+                      wing (baseline category) versus right-wing ideology (Study 2),
+                      leaving out respondents that gave the top answer(s) on that outcome variable in Wave 1.",
+             label="tab:disruption_noceiling_ideo2"),
+      file="tables/disruption_noceiling_ideo2.tex", caption.placement = "top")
+
+# Comentarios
+# A lógica aqui é idêntica à do Estudo 1, mas com uma camada extra de validação: no Reino Unido, 
+# o autor testa tanto a Intenção de Voto (Next_elect_wing) quanto a Autoidentificação Ideológica
+# (Ideology3).
+
+# A análise de sensibilidade no Estudo 2 aborda o problema estatístico dos efeitos teto e chão. 
+# Ao excluir respondentes que já apresentavam atitudes extremas na Onda 1, o autor demonstra que
+# a estabilidade de variáveis como 'Preocupação' entre eleitores de esquerda não se deve necessariamente
+# à ineficácia do protesto, mas à saturação prévia das escalas de mensuração.
+# A consistência dos resultados entre as métricas de intenção de voto e autoidentificação ideológica 
+# confirma que a polarização gerada pelo ativismo disruptivo no Reino Unido é um fenômeno ideológico
+# robusto.
+
+##Appendix I: regression tables for heterogeneous effects by wave 1 outcomes
+
+#interactions by wave 1 answer
+ints <- lapply(outcome_cols, function(outcome){
+  formula <- as.formula(paste0(outcome, "_diff ~  Treated*", outcome))
+  fit <- lm(formula, data=d)
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+ints <- do.call(rbind, ints)
+rownames(ints) <- outcome_names
+print(xtable(ints, digits=c(0,2,2,3,0),
+             caption="Interaction coefficients on each outcome measure, between the media
+             treatment and respondents' wave 1 (pre-treatment) attitude on the same outcome (Study 2).",
+             label="tab:disruption_bywave1_2"),
+      file="tables/disruption_bywave1_2.tex", caption.placement = "top")
+
+#interaction effects on salience by relevant wave 1 outcomes
+moderators <- c(2,3,4,6,7)
+sal_ints <- lapply(outcome_cols_all[moderators], function(mdr){
+  formula <- as.formula(paste0("SalienceClim_any_diff ~  Treated*", mdr))
+  fit <- lm(formula, data=d)
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+sal_ints <- do.call(rbind, sal_ints)
+rownames(sal_ints) <- outcome_names_all[moderators]
+print(xtable(sal_ints, digits=c(0,2,2,3,0),
+             caption="Interaction effects on salience as the DV, between the media
+             treatment and respondents' wave 1 (pre-treatment) attitude on the each outcome (Study 2).",
+             label="tab:disruption_salience_bywave1_2"),
+      file="tables/disruption_salience_bywave1_2.tex", caption.placement = "top")
+
+# Comentarios
+
+# Este bloco repete a análise de moderação que vimos no Estudo 1, mas com um detalhe importante:
+# ele confirma se a reação ao protesto depende da atitude prévia do cidadão britânico antes de ele
+# ler a notícia.
+
+# Ao repetir essa análise (que também foi feita na Dinamarca), o autor demonstra que o comportamento
+# humano diante de protestos disruptivos segue uma lógica previsível: o protesto funciona como um 
+# lembrete para quem já tem certas preocupações, mas enfrenta barreira em quem já atingiu o limite de apoio.
+
+# O estudo 2 mostra que a saliência climática não sobe de forma igual para todos. Ela é "ativada" 
+# por atitudes prévias.
+
+##Appendix I: regression tables for heterogeneous effects by gender and age
+
+# Este último bloco do Estudo 2 fecha o ciclo de testes de robustez demográfica.
+# Assim como no estudo dinamarquês, o objetivo aqui é provar que os efeitos do ativismo 
+# disruptivo não são "coisa de jovem" ou "coisa de homem/mulher", mas sim uma reação 
+# baseada em identidade política.
+
+#interações por genero
+
+ints <- lapply(outcome_cols, function(outcome){
+  formula <- as.formula(paste0(outcome, "_diff ~  Treated*Sex"))
+  fit <- lm(formula, data=d)
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+ints <- do.call(rbind, ints)
+rownames(ints) <- outcome_names
+print(xtable(ints, digits=c(0,2,2,3,0),
+             caption="Interaction coefficients between gender and the media
+             treatment on each outcome measure (Study 2). Reference category is
+             female.",
+             label="tab:disruption_bygender2"),
+      file="tables/disruption_bygender2.tex", caption.placement = "top")
+
+# A análise de interação por gênero no Estudo 2 (Reino Unido) confirma os achados
+# do Estudo 1: as reações ao ativismo disruptivo são transversais ao gênero. 
+# Não foram encontradas diferenças estatisticamente significativas na forma como 
+# homens e mulheres alteram sua percepção de saliência ou sua oposição às políticas 
+# de combustíveis fósseis após a exposição ao tratamento.
+
+
+#interações por faixa etária (em décadas)
+d$age10 <- d$Age/10
+ints <- lapply(outcome_cols, function(outcome){
+  formula <- as.formula(paste0(outcome, "_diff ~  Treated*age10"))
+  fit <- lm(formula, data=d)
+  int <- tail(summary(fit)$coefficients[,c(1,2,4)], 1)
+  n <- nobs(fit)
+  int <- cbind(int, n)
+})
+ints <- do.call(rbind, ints)
+rownames(ints) <- outcome_names
+print(xtable(ints, digits=c(0,2,2,3,0),
+             caption="Interaction coefficients between age and the media
+             treatment on each outcome measure (Study 2). Age is in decades
+             (i.e. divided by 10).",
+             label="tab:disruption_byage2"),
+      file="tables/disruption_byage2.tex", caption.placement = "top")
+
+
+# Comentarios:Enquanto a saliência e a oposição às táticas disruptivas permanecem 
+# estáveis entre as faixas etárias, observa-se que o tratamento de mídia teve um
+# efeito marginalmente superior no aumento da preocupação entre os respondentes 
+# mais velhos ($p = 0.010$). No entanto, esse aumento na preocupação não se traduziu 
+# em mudanças no comportamento ou no apoio a políticas, sugerindo que, embora o protesto 
+# sensibilize diferentes gerações de formas distintas, a barreira para a ação política 
+# permanece sólida e ditada por outros fatores, como a ideologia.
