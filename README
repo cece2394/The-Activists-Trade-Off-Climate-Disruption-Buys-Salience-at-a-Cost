@@ -1,0 +1,39 @@
+This replication package contains the following elements. All scripts are meant to be run with the main replication_package folder, i.e. the folder they are in, as the working directory.
+
+1. cleaned survey data
+
+files:
+ disruption_data_clean.csv
+ disruption_data_clean2.csv
+ column_name_descriptions.csv 
+
+These contain the cleaned survey data for Study 1 and Study 2, respectively, plus a description of the meanings of the (relevant) columns present in them. Respondents that dropped out before wave 2 are present, but have Treated status NA.
+
+2. main text analysis scripts
+
+files:
+ disruption_analysis.R
+ disruption_analysis2.R
+ disruption_mainfigure_joint.R
+ 
+These contain the scripts for all analyses and figures in the paper's main text. The first two analyze study 1 and Study 2, and create files named main_estimates_CIs.csv and main_estimates_CIs2.csv. These files contain the point estimates and confidence intervals of the treatment effect sizes on all main outcome variables in both studies. Lastly, the file disruption_mainfigure_joint.R uses these .csv outputs to create Figure 1 in the main text.
+
+3. appendix analysis scripts
+
+files:
+ disruption_appendices.R
+ disruption_appendices2.R
+
+These scripts contain code to produce the figures and tables in the appendices. They analyze the representativeness of both study samples, create descriptive plots, create detailed tables for the main results, repeat the main analyses without weights (Study 1 only), and investigate heterogeneous treatment effects by voting intention, ideology, previous attitudes, gender and age, as well as potential ceiling effects for political subgroups.
+
+4. output folders
+
+folders:
+ figures
+ tables
+ 
+These folders contain the figures and tables created by the analysis scripts.
+
+5. population data folder
+ 
+These folders contain additional population and voting intention data used by the Appendix analysis scripts, in order to create the tables in Appednix C comparing our sample's demographics and voting intentions to the population.
