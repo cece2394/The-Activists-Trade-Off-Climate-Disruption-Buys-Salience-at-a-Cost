@@ -1,0 +1,62 @@
+##### Replication Data for "The Activist’s Trade-Off: Climate Disruption Buys Salience at a Cost" 
+##### Authors: Clara Vandeweerdt
+
+### FINAL ASSIGMENT
+### Universidade Federal do ABC - UFABC
+### Public Policy Program
+### Prof. Dr. Ricardo Ceneviva
+### Students: Celia Cervera, Larissa Vila Nova, Ayelen Agundez
+############################################################################################################################
+
+#### Esse terceiro script foca na junção dos dados analisados no estudo 01 e no estudo 02
+
+
+# Primeira fase carregar o pacote,  ImportaR e Junção dos Dados
+
+
+library(ggplot2)
+
+#get estimates from both studies
+est_CI1 <- read.csv("main_estimates_CIs.csv")
+est_CI2 <- read.csv("main_estimates_CIs2.csv")
+est_CI <- rbind(est_CI1, est_CI2)
+
+
+# Importa os dois arquivos .csv que geramos no final do Script 1 (Dinamarca) e do Script 2 (Reino Unido). 
+# A função rbind() empilha essas duas bases de dados, colando as linhas do Estudo 2 logo abaixo das linhas do Estudo 1.
+
+# Esta é a etapa de consolidação. Para mostrar o quadro geral, a autora optou por não apresentar os estudos isolados no texto principal,
+# mas sim compará-los lado a lado para demonstrar a consistência do efeito.
+
+# Padronização da Variável de Mensagem da Política
+
+#rename outcomes to match
+est_CI[c(2,7) ,"outcome"] <- "Policy message"
+
+#ordering of outcomes (already in correct order)
+est_CI$outcome <- factor(est_CI$outcome, levels=unique(est_CI$outcome))
+
+# As linhas 2 e 7 do nosso dataframe consolidado correspondem às variáveis "Highway opposition" (Estudo 1) e 
+# "Oil opposition" (Estudo 2). Como elas medem coisas específicas de cada país, o script renomeia ambas para um 
+# termo genérico: "Policy message". O comando factor() garante que a ordem das variáveis no eixo X do gráfico não 
+# seja alterada aleatoriamente pelo R.
+
+#plot
+pdf(paste0("figures/disruption_main_effects_joint.pdf"), 10, 5)
+print(ggplot(est_CI, aes(x=outcome, y=est, color=study)) + 
+        geom_hline(yintercept=0, color="dark grey") +
+        geom_errorbar(aes(ymin=CI_lo, ymax=CI_hi), width=.1, position=position_dodge(.2)) +
+        geom_point(position=position_dodge(.2)) +
+        ylab(paste0("Effect of disruption treatment")) +
+        theme_bw() +
+        theme(axis.title.x=element_blank(),
+              axis.title.y=element_text(size=15),
+              axis.text=element_text(size=15),
+              legend.position="bottom",
+              legend.title=element_blank(),
+              legend.text=element_text(size=13)))
+dev.off
+
+
+# Esse código gera com exatidão a Figure 1 do texto principal 
+# ("Effect of exposure to a media article about disruptive climate protest...").
