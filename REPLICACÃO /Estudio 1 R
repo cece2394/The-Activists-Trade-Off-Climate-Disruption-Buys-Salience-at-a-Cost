@@ -1,0 +1,170 @@
+##### Replication Data for "The Activist’s Trade-Off: Climate Disruption Buys Salience at a Cost" 
+##### Authors: Clara Vandeweerdt
+
+### FINAL ASSIGMENT
+### Universidade Federal do ABC - UFABC
+### Public Policy Program
+### Prof. Dr. Ricardo Ceneviva
+### Students: Celia Cervera, Larissa Vila Nova, Ayelen Agundez
+
+############################################################################################################################
+
+#### Esse primeiro script foca exclusivamente no Estudo 1 (Dinamarca), 
+# preparando os dados, rodando os modelos principais (Teste de Hipóteses) e extraindo os tamanhos de efeito.
+
+
+# Primeira fase carregar os pacotes essenciais para a manipulação dos dados
+
+library(ggplot2)    
+library(marginaleffects)
+library(stargazer)
+library(dplyr)
+
+d <- read.csv("disruption_data_clean.csv")
+
+#n and retention rate
+sum(!is.na(d$Treated))/nrow(d)
+table(d$Treated) # condicional
+
+# O que significa:
+
+# A autora usou um painel de duas ondas (Wave 1 e Wave 2). A taxa de retenção reflete os participantes que voltaram para a 
+# segunda onda, que ocorreu um mês após a primeira. 
+# O código d[!is.na(d$Treated),] exclui os "dropouts" (pessoas que abandonaram o estudo antes do experimento na segunda onda).
+
+
+#leave out wave 2 dropouts
+
+d <- d[!is.na(d$Treated),]
+
+#descriptives
+
+prop.table(table(d$FT_next)) #pct. Moderaterne
+prop.table(table(d$FT_next_wing)) #pct. from each wing
+prop.table(table(d$FT_next[d$FT_next_wing=="other"])) #composition of "other" political orientation
+prop.table(table(d$region)) #n per region
+
+# O que significa:
+
+# Calcula a proporção (porcentagem) de participantes por intenção de voto (FT_next), 
+# bloco ideológico (FT_next_wing), e região (region).
+
+# Isso gera os dados para a seção "Sample details" e as Tabelas A4 e A6 do Apêndice, 
+# onde a autora compara a amostra com a população geral da Dinamarca para provar a representatividade do estudo.
+
+# Normalização das variáveis de resultado (Outcomes)
+
+#main outcomes
+
+outcome_cols <- c("SalienceClim_any", "Highway","Govt","Concern","Behavior")
+outcome_names <- c("Salience", "Highway opposition", "Govt. dissatisf.", "Concern", "Behavior intent")
+
+#normalize differences by width of scale (e.g. divide by 4 for 1-5 scale)
+#this is equivalent to rescaling original variables to 0-1
+for(outcome in outcome_cols[-1]){
+  scalemax <- max(d[outcome], na.rm=T)
+  d[paste0(outcome,"_diff_norm")]  <- d[paste0(outcome,"_diff")]/(scalemax-1)
+}
+
+#salience does not need rescaling; already 0-1
+
+d["SalienceClim_any_diff_norm"] <- d["SalienceClim_any_diff"]
+
+# O que significa:
+
+# As variáveis dependentes (preocupação com o clima, oposição a rodovias, etc.) foram medidas em escalas 
+# diferentes (ex: 1 a 5, 1 a 7). O loop for redimensiona todas as variáveis para uma escala de 0 a 1. 
+# A variável de saliência já é binária (0 ou 1), então não precisa de conversão.
+
+# A autora nota explicitamente que as variáveis foram redimensionadas de 0 a 1 para permitir a comparabilidade 
+# no Gráfico 1 (Figure 1).
+
+
+# Pesos Amostrais e Regressões Principais (O Core do Estudo)
+
+#weighting
+library(survey)
+d_weighted <- svydesign(ids = ~1, data = d, weights = d$weight_w2)
+
+
+##main effect of treatment on first differences
+
+#main: salience, highway support, satisfaction with govt, concern, behavior
+summary(svyglm(SalienceClim_any_diff ~ Treated, design=d_weighted))
+summary(svyglm(Highway_diff ~ Treated, design=d_weighted))
+summary(svyglm(Govt_diff ~ Treated, design=d_weighted))
+summary(svyglm(Concern_diff ~ Treated, design=d_weighted))
+summary(svyglm(Behavior_diff ~ Treated, design=d_weighted))
+
+# O que significa:
+
+# Aplica pesos amostrais usando o pacote survey para corrigir desvios demográficos na amostra dinamarquesa. 
+# Depois, roda os Modelos Lineares Generalizados (svyglm).
+
+# Esta é a execução empírica das Hipóteses H1 a H5. A autora explica que subtrair as atitudes anteriores (onda 1)
+# permite controlar características estáveis dos respondentes, estimando o efeito com muito mais precisão.
+# O uso de pesos para o Estudo 1 é justificado no apêndice para refletir a população geral
+
+#percent mentioning Climate in wave 1 (weighted and unweighted)
+
+d %>% summarise(weighted_mean = sum(SalienceClim_any * weight_w2) / sum(weight_w2))
+prop.table(table(d$SalienceClim_any))
+
+# não há evidência de que o tratamento altere significativamente
+
+# Tamanho do Efeito (Cohen's d) e Variáveis Secundárias
+
+#significant effects in SDs
+fit_salience <- svyglm(SalienceClim_any_diff ~ Treated, design=d_weighted)
+fit_salience$coefficients["Treated"] / sd(d$SalienceClim_any, na.rm=T) #effect in SDs
+fit_highway <- svyglm(Highway_diff ~ Treated, design=d_weighted)
+fit_highway$coefficients["Treated"] / sd(d$Highway, na.rm=T) #effect in SDs
+
+# O que significa: 
+
+# Divide o coeficiente do tratamento pelo desvio padrão da variável original para encontrar o tamanho do efeito em 
+# desvios padrão (Cohen's d). Também testa o efeito do tratamento em políticas secundárias não relacionadas ao protesto.
+
+#secondary: other policies
+summary(svyglm(Policy_diff ~ Treated, design=d_weighted))
+
+# Extração de Dados para o Gráfico
+
+##main effect graph
+
+#effect sizes (0-1) and CIs
+est_CI <- as.data.frame(t(sapply(outcome_cols, function(outcome) {
+  formula <- as.formula(paste0(outcome, "_diff_norm ~ Treated"))
+  fit <- svyglm(formula, design=d_weighted)
+  c(fit$coefficients["Treated"], confint(fit)["Treated",])
+})))
+
+#clean
+colnames(est_CI) <- c("est", "CI_lo", "CI_hi")
+est_CI$outcome <- outcome_names
+est_CI$outcome <- factor(est_CI$outcome, levels=outcome_names)
+est_CI$study <- "Study 1, DK"
+
+#export
+write.csv(est_CI, "main_estimates_CIs.csv", row.names=F)
+
+#Arquivo CSV exportado
+
+
+##manipulation checks
+
+#time spent on article (treated only)
+tapply(d$Treated_timer, d$Treated, mean, ra.rm=T)
+t.test(Treated_timer ~ Manipulation_correct, d=d[d$Treated==1,]) #by correct answer
+
+#rate of correct answer by treatment
+tapply(d$Manipulation_correct, d$Treated, mean, ra.rm=T)
+tapply(d$Manipulation_correct | d$Manipulation_protest, d$Treated, mean, ra.rm=T)
+#also counting respondents giving a "protest" answer
+
+# O que significa: 
+  
+# Usa testes T para comparar o tempo gasto lendo a notícia (tratamento) entre as pessoas que acertaram e
+#erraram a pergunta de checagem.Conexão com o artigo: A autora reporta que os participantes tratados passaram 
+#em média 67 segundos lendo o artigo. Ela também reporta que quem acertou a pergunta passou mais tempo lendo (88s) 
+# do que quem errou (24s), gerando um valor-p de $p<0.1$.
